@@ -1,7 +1,51 @@
-﻿@{
+﻿@model Retail_Crawler.Models.ViewModels.ReportViewModel
+
+@{
     ViewData["Title"] = "Home Page";
+
+    string RenderStoreListDropdown()
+    {
+        var storeListDropdownHtml = "<option value=''></option>";
+
+        if (Model.StoreList != null)
+        {
+            foreach (var store in Model.StoreList)
+            {
+                storeListDropdownHtml += $@"
+                    <option value=""{store.StoreNumber}"">
+                        {store.StoreNumber}
+                    </option>";
+            }
+        }
+
+        return storeListDropdownHtml;
+    }
 }
 
-<div class="text-center">
+<div>
+    <form asp-action="DownloadFile" method="get">
+        <div class="mb-3">
+            <label for="store" class="form-label">Zip Code:</label>
+            <select name="store" class="form-control" id="store">
+                @Html.Raw(RenderStoreListDropdown())
+            </select>
+        </div>
+        <div class="mb-3">
+            <label for="competitorInput" class="form-label">Competitor:</label>
+            <select name="competitor" class="form-control" id="competitor">
+                <option value=""></option>
+                <option value="stopandshop">StopandShop</option>
+                <option value="shoprite">Shoprite</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Download</button>
+    </form>
 
+    @* <form>
+        <div class="mb-3">
+            <label for="urlInput" class="form-label">Enter URL to crawl:</label>
+            <input type="text" class="form-control" id="urlInput" placeholder="https://example.com">
+        </div>
+        <button type="submit" class="btn btn-primary">Crawl</button>
+    </form> *@
 </div>

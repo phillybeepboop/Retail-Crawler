@@ -1,3 +1,5 @@
+using Retail_Crawler.Services;
+
 namespace Retail_Crawler
 {
     public class Program
@@ -8,6 +10,8 @@ namespace Retail_Crawler
 
             // Add services to the container.
             builder.Services.AddControllersWithViews();
+
+            builder.Services.AddScoped<ReportDAO>();
 
             var app = builder.Build();
 

@@ -2,30 +2,79 @@ using ExcelDataReader;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Playwright;
 using OpenAI;
+using Retail_Crawler.Models;
+using Retail_Crawler.Models.ViewModels;
+using Retail_Crawler.Services;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
-//using Retail_Crawler.Models;
 
 namespace Retail_Crawler.Controllers
 {
     public class HomeController : Controller
     {
-        private readonly List<string> _zipcodes;
+        //private readonly List<string> _zipcodes;
+        private readonly Dictionary<string, string> _stores;
         private readonly string? apiKey;
         private readonly OpenAIClient _client;
+        private readonly ReportDAO _reportDAO;
 
-        public HomeController(IConfiguration configuration)
+        public HomeController(IConfiguration configuration, ReportDAO reportDAO)
         {
-            _zipcodes = new List<string> { "11237", "11368", "07093", "11206", "11368", "10451", "11206", "11385", "11212", "10473", "10456", "08611", "06606", "11373", "11233", "10550", "11101", "10451", "06610", "07202", "07022", "11717", "11207", "07047", "10451", "10035", "11231", "11362", "11590", "11411", "11226", "11208", "06606", "11550", "11214", "07072", "08854" };
-
+            //_zipcodes = new List<string> { "11237", "11368", "07093", "11206", "11368", "10451", "11206", "11385", "11212", "10473", "10456", "08611", "06606", "11373", "11233", "10550", "11101", "10451", "06610", "07202", "07022", "11717", "11207", "07047", "10451", "10035", "11231", "11362", "11590", "11411", "11226", "11208", "06606", "11550", "11214", "07072", "08854" };
+            _stores = new()
+            {
+                ["11"] = "11237",
+                ["12"] = "11372",
+                ["13"] = "11368",
+                ["14"] = "07093",
+                ["16"] = "11206",
+                ["17"] = "11368",
+                ["18"] = "10451",
+                ["22"] = "11206",
+                ["23"] = "11385",
+                ["25"] = "11212",
+                ["27"] = "10473",
+                ["30"] = "10456",
+                ["35"] = "08611",
+                ["36"] = "06606",
+                ["37"] = "11373",
+                ["38"] = "11233",
+                ["40"] = "10550",
+                ["41"] = "11101",
+                ["42"] = "10451",
+                ["43"] = "06610",
+                ["46"] = "07202",
+                ["47"] = "07022",
+                ["48"] = "11717",
+                ["49"] = "11207",
+                ["50"] = "07047",
+                ["72"] = "10451",
+                ["73"] = "10035",
+                ["75"] = "11231",
+                ["76"] = "11362",
+                ["78"] = "11590",
+                ["102"] = "11411",
+                ["103"] = "11226",
+                ["105"] = "11208",
+                ["107"] = "06606",
+                ["110"] = "11550",
+                ["111"] = "11214",
+                ["113"] = "07072",
+                ["115"] = "08854"
+            };
             apiKey = configuration["OpenAI:ApiKey"];
             _client = new OpenAIClient(apiKey);
+            _reportDAO = reportDAO;
         }
 
         public IActionResult Index()
         {
-            return View();
+            var vm = new ReportViewModel
+            {
+                StoreList = _reportDAO.GetAllStores()
+            };
+            return View(vm);
         }
 
         public async Task<IBrowserContext> CreateBrowserContext()
@@ -56,8 +105,9 @@ namespace Retail_Crawler.Controllers
         {
             var context = await CreateBrowserContext();
 
-            foreach (var zipcode in _zipcodes)
+            foreach (var store in _stores)
             {
+                var zipcode = store.Value;
                 var stopAndShopTask1 = CrawlStopandShop(context, zipcode, 1);
                 var stopAndShopTask2 = CrawlStopandShop(context, zipcode, 2);
                 var shopriteTask = CrawlShoprite(context, zipcode);
@@ -66,15 +116,15 @@ namespace Retail_Crawler.Controllers
 
                 await Task.WhenAll(stopAndShopTask1, stopAndShopTask2, shopriteTask);
 
-
                 TimeSpan ts = stopwatch.Elapsed;
                 long ms = stopwatch.ElapsedMilliseconds;
 
                 Console.WriteLine($"Total Time (TimeSpan): {ts}");
                 Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
 
+                CombineStopandShopFiles(zipcode);
                 CombineShopriteFiles(zipcode);
-
+                
                 await Task.WhenAll(
                     CompareStores(zipcode, "stopandshop"),
                     CompareStores(zipcode, "shoprite")
@@ -88,28 +138,6 @@ namespace Retail_Crawler.Controllers
                 Console.WriteLine($"Total Time (TimeSpan): {ts}");
                 Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
             }
-        }
-
-        public void CombineShopriteFiles(string zipcode)
-        {
-            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\Shoprite";
-            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_shoprite.txt");
-            using (StreamWriter writer = new StreamWriter(outputFilePath))
-            {
-                for (int i = 1; i <= 13; i++)
-                {
-                    string filePath = Path.Combine(folderPath, $"{zipcode}_shoprite_page{i}.txt");
-                    using (StreamReader reader = new StreamReader(filePath))
-                    {
-                        string? line;
-                        while ((line = reader.ReadLine()) != null)
-                        {
-                            writer.WriteLine(line);
-                        }
-                    }
-                }
-            }
-            Console.WriteLine("Files combined successfully!");
         }
 
         public void ParseExcel(string filePath, string zipcode)
@@ -141,11 +169,6 @@ namespace Retail_Crawler.Controllers
                 }
 
                 writer.Write("$" + table.Rows[i][8]);
-
-                //for (int j = 0; j < table.Columns.Count; j++)
-                //{
-                //    writer.Write(table.Rows[i][j] + "\t");
-                //}
                 writer.WriteLine();
             }
         }
@@ -447,33 +470,6 @@ namespace Retail_Crawler.Controllers
             });
 
             await Task.WhenAll(workers);
-
-            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_shoprite.txt");
-            var filePaths = Enumerable
-                .Range(1, 13)
-                .Select(i => Path.Combine(folderPath,
-                    $"{zipcode}_shoprite2_page{i}.txt"))
-                .Where(System.IO.File.Exists)
-                .ToList();
-
-            using (StreamWriter writer = new StreamWriter(outputFilePath))
-            {
-                foreach (string filePath in filePaths)
-                {
-                    if (filePath == outputFilePath) continue;
-
-                    using (StreamReader reader = new StreamReader(filePath))
-                    {
-                        string? line;
-                        while ((line = await reader.ReadLineAsync()) != null)
-                        {
-                            await writer.WriteLineAsync(line);
-                        }
-                    }
-                }
-            }
-
-            Console.WriteLine("Files combined successfully!");
         }
 
         public async Task ScrapeShopriteWeeklyAd(string filePath, IPage page, int pageNumber)
@@ -614,6 +610,50 @@ namespace Retail_Crawler.Controllers
             {
                 Console.WriteLine($"Unhandled error in ScrapeShopritepWeeklyAd: {ex.Message}");
             }
+        }
+
+        public void CombineStopandShopFiles(string zipcode)
+        {
+            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\StopandShop";
+            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_stopandshop.txt");
+            using (StreamWriter writer = new StreamWriter(outputFilePath))
+            {
+                for (int i = 1; i <= 2; i++)
+                {
+                    string filePath = Path.Combine(folderPath, $"{zipcode}_stopandshop_{i}.txt");
+                    using (StreamReader reader = new StreamReader(filePath))
+                    {
+                        string? line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            writer.WriteLine(line);
+                        }
+                    }
+                }
+            }
+            Console.WriteLine("Files combined successfully!");
+        }
+
+        public void CombineShopriteFiles(string zipcode)
+        {
+            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\Shoprite";
+            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_shoprite.txt");
+            using (StreamWriter writer = new StreamWriter(outputFilePath))
+            {
+                for (int i = 1; i <= 13; i++)
+                {
+                    string filePath = Path.Combine(folderPath, $"{zipcode}_shoprite_page{i}.txt");
+                    using (StreamReader reader = new StreamReader(filePath))
+                    {
+                        string? line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            writer.WriteLine(line);
+                        }
+                    }
+                }
+            }
+            Console.WriteLine("Files combined successfully!");
         }
 
         public async Task CompareStores(string zipcode, string competitor)
@@ -815,6 +855,24 @@ namespace Retail_Crawler.Controllers
                 mag2 += vector2[i] * vector2[i];
             }
             return dot / (float)(Math.Sqrt(mag1) * Math.Sqrt(mag2));
+        }
+
+        [HttpGet]
+        public IActionResult DownloadFile(string store, string competitor)
+        {
+            var zipcode = _stores[store];
+            var folderPath = $@"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\{competitor}";
+            string fileName = $"{zipcode}_{competitor}_comparison.csv";
+            string filePath = Path.Combine(folderPath, fileName);
+            if (System.IO.File.Exists(filePath))
+            {
+                var bytes = System.IO.File.ReadAllBytes(filePath);
+                return File(bytes, "text/plain", fileName);
+            }
+            else
+            {
+                return NotFound("File not found.");
+            }
         }
     }
 }
