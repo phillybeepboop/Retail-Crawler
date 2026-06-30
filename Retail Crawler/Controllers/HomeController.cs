@@ -2,7 +2,6 @@ using ExcelDataReader;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Playwright;
 using OpenAI;
-using Retail_Crawler.Models;
 using Retail_Crawler.Models.ViewModels;
 using Retail_Crawler.Services;
 using System.Collections.Concurrent;
@@ -13,59 +12,65 @@ namespace Retail_Crawler.Controllers
 {
     public class HomeController : Controller
     {
-        //private readonly List<string> _zipcodes;
+        private readonly ReportDAO _reportDAO;
         private readonly Dictionary<string, string> _stores;
         private readonly string? apiKey;
         private readonly OpenAIClient _client;
-        private readonly ReportDAO _reportDAO;
+        private readonly List<string> items1;
+        private readonly List<string> prices1;
 
         public HomeController(IConfiguration configuration, ReportDAO reportDAO)
         {
-            //_zipcodes = new List<string> { "11237", "11368", "07093", "11206", "11368", "10451", "11206", "11385", "11212", "10473", "10456", "08611", "06606", "11373", "11233", "10550", "11101", "10451", "06610", "07202", "07022", "11717", "11207", "07047", "10451", "10035", "11231", "11362", "11590", "11411", "11226", "11208", "06606", "11550", "11214", "07072", "08854" };
+            _reportDAO = reportDAO;
             _stores = new()
             {
-                ["11"] = "11237",
-                ["12"] = "11372",
-                ["13"] = "11368",
-                ["14"] = "07093",
-                ["16"] = "11206",
-                ["17"] = "11368",
-                ["18"] = "10451",
-                ["22"] = "11206",
-                ["23"] = "11385",
-                ["25"] = "11212",
-                ["27"] = "10473",
-                ["30"] = "10456",
-                ["35"] = "08611",
-                ["36"] = "06606",
-                ["37"] = "11373",
-                ["38"] = "11233",
-                ["40"] = "10550",
-                ["41"] = "11101",
-                ["42"] = "10451",
-                ["43"] = "06610",
-                ["46"] = "07202",
-                ["47"] = "07022",
-                ["48"] = "11717",
-                ["49"] = "11207",
-                ["50"] = "07047",
-                ["72"] = "10451",
-                ["73"] = "10035",
-                ["75"] = "11231",
-                ["76"] = "11362",
-                ["78"] = "11590",
-                ["102"] = "11411",
-                ["103"] = "11226",
-                ["105"] = "11208",
-                ["107"] = "06606",
-                ["110"] = "11550",
-                ["111"] = "11214",
-                ["113"] = "07072",
-                ["115"] = "08854"
+                ["113"] = "07072"
             };
+            //_stores = new()
+            //{
+            //    ["11"] = "11237",
+            //    ["12"] = "11372",
+            //    ["13"] = "11368",
+            //    ["14"] = "07093",
+            //    ["16"] = "11206",
+            //    ["17"] = "11368",
+            //    ["18"] = "10451",
+            //    ["22"] = "11206",
+            //    ["23"] = "11385",
+            //    ["25"] = "11212",
+            //    ["27"] = "10473",
+            //    ["30"] = "10456",
+            //    ["35"] = "08611",
+            //    ["36"] = "06606",
+            //    ["37"] = "11373",
+            //    ["38"] = "11233",
+            //    ["40"] = "10550",
+            //    ["41"] = "11101",
+            //    ["42"] = "10451",
+            //    ["43"] = "06610",
+            //    ["46"] = "07202",
+            //    ["47"] = "07022",
+            //    ["48"] = "11717",
+            //    ["49"] = "11207",
+            //    ["50"] = "07047",
+            //    ["72"] = "10451",
+            //    ["73"] = "10035",
+            //    ["75"] = "11231",
+            //    ["76"] = "11362",
+            //    ["78"] = "11590",
+            //    ["102"] = "11411",
+            //    ["103"] = "11226",
+            //    ["105"] = "11208",
+            //    ["107"] = "06606",
+            //    ["110"] = "11550",
+            //    ["111"] = "11214",
+            //    ["113"] = "07072",
+            //    ["115"] = "08854"
+            //};
             apiKey = configuration["OpenAI:ApiKey"];
             _client = new OpenAIClient(apiKey);
-            _reportDAO = reportDAO;
+            items1 = [];
+            prices1 = [];
         }
 
         public IActionResult Index()
@@ -77,44 +82,36 @@ namespace Retail_Crawler.Controllers
             return View(vm);
         }
 
-        public async Task<IBrowserContext> CreateBrowserContext()
-        {
-            var playwright = await Playwright.CreateAsync();
-            var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-            {
-                Headless = false,
-                //ExecutablePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                Args = new[]
-                {
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-web-security",
-                    "--disable-features=IsolateOrigins,site-per-process",
-                    "--window-size=1920,1080"
-                }
-            });
-            var context = await browser.NewContextAsync(new BrowserNewContextOptions
-            {
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                Locale = "en-US"
-            });
-            return context;
-        }
-
-        public async Task CrawlAndCompareAsync()
+        public async Task<IActionResult> CrawlAndCompare()
         {
             var context = await CreateBrowserContext();
-
+            
             foreach (var store in _stores)
             {
-                var zipcode = store.Value;
-                var stopAndShopTask1 = CrawlStopandShop(context, zipcode, 1);
-                var stopAndShopTask2 = CrawlStopandShop(context, zipcode, 2);
-                var shopriteTask = CrawlShoprite(context, zipcode);
-
                 Stopwatch stopwatch = Stopwatch.StartNew();
 
-                await Task.WhenAll(stopAndShopTask1, stopAndShopTask2, shopriteTask);
+                var zipcode = store.Value;
+                items1.Clear();
+                prices1.Clear();
+
+                string directoryPath = Directory.GetCurrentDirectory() + $@"\bin\Debug\net8.0\{zipcode}";
+                if (Directory.Exists(directoryPath))
+                {
+                    System.IO.File.WriteAllText(directoryPath + $@"\{zipcode}.txt", string.Empty);
+                    foreach (string filePath in Directory.EnumerateFiles(directoryPath, "*.xlsx"))
+                    {
+                        ParseExcel(filePath, zipcode);
+                    }
+                }
+
+                directoryPath = Directory.GetCurrentDirectory() + $@"\bin\Debug\net8.0\Shoprite";
+                if (Directory.Exists(directoryPath))
+                {
+                    foreach (string filePath in Directory.EnumerateFiles(directoryPath, "*page*"))
+                    {
+                        System.IO.File.Delete(filePath);
+                    }
+                }
 
                 TimeSpan ts = stopwatch.Elapsed;
                 long ms = stopwatch.ElapsedMilliseconds;
@@ -122,12 +119,34 @@ namespace Retail_Crawler.Controllers
                 Console.WriteLine($"Total Time (TimeSpan): {ts}");
                 Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
 
+                var stopAndShopTask1 = CrawlStopandShop(context, zipcode, 1);
+                var stopAndShopTask2 = CrawlStopandShop(context, zipcode, 2);
+                var stopAndShopTask3 = CrawlStopandShop(context, zipcode, 3);
+                var shopriteTask = CrawlShoprite(context, zipcode);
+
+                await Task.WhenAll(stopAndShopTask1, stopAndShopTask2, stopAndShopTask3, shopriteTask);
+                //await Task.WhenAll(stopAndShopTask1, stopAndShopTask2, stopAndShopTask3);
+                //await CrawlShoprite(context, zipcode);
+                Console.WriteLine("Scraping complete.");
+
+                ts = stopwatch.Elapsed;
+                ms = stopwatch.ElapsedMilliseconds;
+
+                Console.WriteLine($"Total Time (TimeSpan): {ts}");
+                Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
+
                 CombineStopandShopFiles(zipcode);
                 CombineShopriteFiles(zipcode);
-                
+
+                ts = stopwatch.Elapsed;
+                ms = stopwatch.ElapsedMilliseconds;
+
+                Console.WriteLine($"Total Time (TimeSpan): {ts}");
+                Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
+
                 await Task.WhenAll(
-                    CompareStores(zipcode, "stopandshop"),
-                    CompareStores(zipcode, "shoprite")
+                    CompareStores(zipcode, "StopandShop"),
+                    CompareStores(zipcode, "Shoprite")
                 );
 
                 stopwatch.Stop();
@@ -137,7 +156,51 @@ namespace Retail_Crawler.Controllers
 
                 Console.WriteLine($"Total Time (TimeSpan): {ts}");
                 Console.WriteLine($"Total Time (Milliseconds): {ms}ms");
+                Console.WriteLine("Finished");
             }
+
+            return RedirectToAction("Index");
+        }
+
+        public async Task<IBrowserContext> CreateBrowserContext()
+        {
+            var playwright = await Playwright.CreateAsync();
+
+            var browser = await playwright.Chromium.LaunchAsync(
+                new BrowserTypeLaunchOptions
+                {
+                    Headless = false,
+                    Channel = "chrome",
+                    Args = new[]
+                    {
+                        "--disable-blink-features=AutomationControlled",
+                        "--start-maximized",
+                        "--disable-dev-shm-usage",
+                        "--no-sandbox",
+                        "--disable-infobars",
+                        "--disable-automation",
+                        "--disable-extensions-except=",
+                        "--disable-default-apps",
+                        "--no-first-run",
+                        "--password-store=basic"
+                    }
+                });
+
+            var contextOptions = new BrowserNewContextOptions
+            {
+                ViewportSize = new ViewportSize
+                {
+                    Width = 1920,
+                    Height = 1080
+                },
+
+                Locale = "en-US",
+                TimezoneId = "America/New_York",
+            };
+
+            var context = await browser.NewContextAsync(contextOptions);
+
+            return context;
         }
 
         public void ParseExcel(string filePath, string zipcode)
@@ -156,19 +219,27 @@ namespace Retail_Crawler.Controllers
             var result = reader.AsDataSet(config);
             var table = result.Tables[0];
 
-            using var writer = new StreamWriter($"{zipcode}_2.txt", append: true);
+            string filePath2 = Directory.GetCurrentDirectory() + $@"\bin\Debug\net8.0\{zipcode}\{zipcode}.txt";
+
+            using var writer = new StreamWriter(filePath2, append: true);
 
             for (int i = 0; i < table.Rows.Count; i++)
             {
-                writer.Write(table.Rows[i][2]);
+                var item = table.Rows[i][2];
+
+                items1.Add((string)item);
+                writer.Write(item);
                 writer.WriteLine();
 
+                var price = "";
                 if (table.Rows[i][7]?.ToString() != "1")
                 {
-                    writer.Write(table.Rows[i][7] + " / ");
+                    price = table.Rows[i][7] + " / ";
                 }
 
-                writer.Write("$" + table.Rows[i][8]);
+                price += "$" + table.Rows[i][8];
+                prices1.Add(price);
+                writer.WriteLine(price);
                 writer.WriteLine();
             }
         }
@@ -190,221 +261,217 @@ namespace Retail_Crawler.Controllers
             {
                 await writer.WriteLineAsync($"{product.Name},{product.Price1},{product.Price2}");
             }
+
+            Console.WriteLine("Successfully written to Excel file");
         }
 
-        public async Task CrawlStopandShop(IBrowserContext context, string zipcode, int half)
+        public async Task CrawlStopandShop(IBrowserContext context, string zipcode, int third)
         {
-            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\StopandShop";
+            string folderPath = Directory.GetCurrentDirectory() + @"\bin\Debug\net8.0\StopandShop";
             if (!Directory.Exists(folderPath))
             {
                 Directory.CreateDirectory(folderPath);
             }
 
             var page = await context.NewPageAsync();
-            await page.GotoAsync("https://stopandshop.com/savings/weekly-ad/grid-view");
-            await page.WaitForTimeoutAsync(5000);
 
-            //Bypass bot puzzle
-            var iframe = page.FrameLocator("iframe[src*='https://geo.captcha-delivery.com/captcha']");
-            var slider = iframe.Locator("i.sliderIcon");
-            var sliderTarget = iframe.Locator("i.sliderTargetIcon");
-            if (await slider.CountAsync() == 1 && await sliderTarget.CountAsync() == 1)
+            try
             {
-                await slider.HoverAsync();
-                await page.Mouse.DownAsync();
-                await sliderTarget.HoverAsync();
-                await page.Mouse.UpAsync();
-                await page.WaitForTimeoutAsync(5000);
+                await Task.Delay(Random.Shared.Next(1000, 3000));
+                await page.GotoAsync("https://stopandshop.com/savings/weekly-ad/grid-view");
+                await Task.Delay(Random.Shared.Next(3000, 4000));
+
+                //Bypass bot puzzle
+                if (await TryBypassCaptcha(page))
+                    await Task.Delay(Random.Shared.Next(3000, 5000));
+
+                await Task.Delay(Random.Shared.Next(2000, 4000));
+                await SelectStopandShopStore(page, zipcode);
+
+                string fileName = $"{zipcode}_stopandshop_{third}.txt";
+                string filePath = Path.Combine(folderPath, fileName);
+                System.IO.File.WriteAllText(filePath, string.Empty);
+                await ScrapeStopandShopWeeklyAd(filePath, page, third);
             }
-
-
-            var storeChangeButton = await page.QuerySelectorAsync("button[id='weekly-ad_store-change']");
-            if (storeChangeButton != null)
-                await storeChangeButton.ClickAsync();
-
-            await page.FillAsync("input[id='search-zip-code']", zipcode);
-
-            await page.ClickAsync("button[id='search-location']");
-
-            await page.WaitForTimeoutAsync(3000);
-
-            var storeBlock = await page.QuerySelectorAsync("div[class='pdl-location_block']");
-            if (storeBlock != null)
+            catch (Exception ex)
             {
-                var storeButton = await storeBlock.QuerySelectorAsync("button[id^='location-block-button']");
-                if (storeButton != null)
-                {
-                    await storeButton.ClickAsync();
-                    await page.WaitForTimeoutAsync(3000);
+                Console.WriteLine($"Error occurred while crawling Stop and Shop: {ex.Message}");
 
-                    string fileName = $"{zipcode}_stopandshop_{half}.txt";
-                    string filePath = Path.Combine(folderPath, fileName);
-                    System.IO.File.WriteAllText(filePath, string.Empty);
-                    await ScrapeStopandShopWeeklyAd(filePath, page, half);
-                    await page.CloseAsync();
-                }
+                if (await TryBypassCaptcha(page))
+                    await Task.Delay(Random.Shared.Next(3000, 5000));
+
+                await SelectStopandShopStore(page, zipcode);
+
+                string fileName = $"{zipcode}_stopandshop_{third}.txt";
+                string filePath = Path.Combine(folderPath, fileName);
+                System.IO.File.WriteAllText(filePath, string.Empty);
+                await ScrapeStopandShopWeeklyAd(filePath, page, third);
+                Console.WriteLine($"Finished scraping StopandShop_{third} for zipcode {zipcode}");
+            }
+            finally
+            {
+                await page.CloseAsync();
             }
         }
 
-        public async Task ScrapeStopandShopWeeklyAd(string filePath, IPage page, int half)
+        private async Task<bool> SelectStopandShopStore(IPage page, string zipcode)
+        {
+            try
+            {
+                var storeChangeButton = await page.QuerySelectorAsync("button[id='weekly-ad_store-change']");
+                if (storeChangeButton != null)
+                {
+                    await storeChangeButton.ClickAsync();
+                    await Task.Delay(Random.Shared.Next(800, 1500));
+                }
+
+                await HumanTypeIntoSelector(page, "input[id='search-zip-code']", zipcode);
+                await Task.Delay(Random.Shared.Next(400, 900));
+
+                var searchButton = await page.QuerySelectorAsync("button[id='search-location']");
+                if (searchButton != null)
+                    await searchButton.ClickAsync();
+
+                await Task.Delay(Random.Shared.Next(2500, 4000));
+
+                var storeBlock = await page.QuerySelectorAsync("div[class='pdl-location_block']");
+                if (storeBlock != null)
+                {
+                    var storeButton = await storeBlock.QuerySelectorAsync("button[id^='location-block-button']");
+                    if (storeButton != null)
+                    {
+                        await storeButton.ClickAsync();
+                        await Task.Delay(Random.Shared.Next(2500, 4000));
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error selecting Stop and Shop store: {ex.Message}");
+            }
+            return false;
+        }
+
+        public async Task ScrapeStopandShopWeeklyAd(string filePath, IPage page, int third)
         {
             try
             {
                 using var writer = new StreamWriter(filePath, append: true);
 
-                int previousHeight = 0;
-
-                while (true)
-                {
-                    var currentHeight = await page.EvaluateAsync<int>(
-                        "document.body.scrollHeight");
-
-                    if (currentHeight == previousHeight)
-                        break;
-
-                    previousHeight = currentHeight;
-
-                    await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
-                    await page.WaitForTimeoutAsync(3000);
-                }
+                await HumanScroll(page);
 
                 // Scrape all item tiles
                 var itemButtons = await page.QuerySelectorAllAsync("li[class^='item-tile']");
                 Console.WriteLine($"Found {itemButtons?.Count ?? 0} items.");
 
-                if (itemButtons != null && itemButtons.Count > 0)
+                if (itemButtons == null && itemButtons.Count == 0)
                 {
-                    int itemButtonsCount = itemButtons.Count;
+                    Console.WriteLine("No items found on the page.");
+                    return;
+                }
 
-                    int start, end;
-                    if (half == 1)
-                    {
-                        start = 0;
-                        end = itemButtonsCount / 2;
-                    }
-                    else
-                    {
-                        start = itemButtonsCount / 2 + 1;
-                        end = itemButtonsCount;
-                    }
+                int total = itemButtons.Count;
+                int start = third == 1 ? 0 : total / 3 * (third - 1) + 1;
+                int end = third == 3 ? total : total / 3 * third + 1;
 
-                    // Revert
-                    for (int i = start; i < end; i++)
-                    {
-                        Console.WriteLine($"Scraping item #{i + 1}");
+                for (int i = start; i < end; i++)
+                {
+                    Console.WriteLine($"Scraping item #{i + 1}");
 
-                        try
+                    try
+                    {
+                        await itemButtons[i].ClickAsync();
+                        await Task.Delay(Random.Shared.Next(1500, 3000));
+
+                        var items = await page.QuerySelectorAllAsync("li[class*='product-tile-list-cell']");
+                        Console.WriteLine($"Found {items?.Count ?? 0} items.");
+
+                        if (items != null && items.Count > 0)
                         {
-                            await itemButtons[i].ClickAsync();
-                            await page.WaitForTimeoutAsync(2000);
-
-                            var items = await page.QuerySelectorAllAsync("li[class*='product-tile-list-cell']");
-                            Console.WriteLine($"Found {items?.Count ?? 0} items.");
-
-                            if (items != null && items.Count > 0)
+                            int itemCount = items.Count;
+                            for (int j = 0; j < itemCount; j++)
                             {
-                                int itemCount = items.Count;
-                                for (int j = 0; j < itemCount; j++)
+                                Console.WriteLine($"Scraping item #{i + 1}-{j + 1}");
+
+                                try
                                 {
-                                    Console.WriteLine($"Scraping item #{i + 1}-{j + 1}");
+                                    var itemName = await items[j].QuerySelectorAsync("div[class='product-grid-cell_name']");
+                                    var itemSize = await items[j].QuerySelectorAsync("div[class='product-grid-cell_sizes']");
 
-                                    try
+                                    if (itemName != null)
                                     {
-                                        var itemName = await items[j].QuerySelectorAsync("div[class='product-grid-cell_name']");
-                                        var itemSize = await items[j].QuerySelectorAsync("div[class='product-grid-cell_sizes']");
-
-                                        if (itemName != null)
-                                        {
-                                            string inner = await itemName.InnerTextAsync();
-                                            writer.WriteLine(inner);
-                                        }
-
-                                        if (itemSize != null)
-                                        {
-                                            string inner = await itemSize.InnerTextAsync();
-                                            writer.WriteLine(inner);
-                                        }
-
-                                        string itemPrice = await items[j].EvalOnSelectorAsync<string>(
-                                                "span[class*='product-grid-cell_main-price']",
-                                                @"element => {
-                                            return Array.from(element.childNodes)
-                                                .filter(n => n.nodeType === Node.TEXT_NODE)
-                                                .map(n => n.textContent.trim())
-                                                .filter(Boolean)
-                                                .join(' ');
-                                            }"
-                                            );
-
-                                        if (!string.IsNullOrWhiteSpace(itemPrice))
-                                            writer.WriteLine(itemPrice);
-
-                                        await Task.Delay(100);
+                                        string inner = await itemName.InnerTextAsync();
+                                        writer.WriteLine(inner);
                                     }
-                                    catch (Exception itemEx)
+
+                                    if (itemSize != null)
                                     {
-                                        Console.WriteLine($"Failed to scrape an item: {itemEx.Message}");
+                                        string inner = await itemSize.InnerTextAsync();
+                                        writer.WriteLine(inner);
+                                    }
 
-                                        // Bypass bot puzzle if it appears
-                                        var iframe = page.FrameLocator("iframe[src*='https://geo.captcha-delivery.com/captcha']");
-                                        var retryButton = iframe.Locator("button[class='retryLink']");
-                                        await retryButton.ClickAsync();
-                                        await page.WaitForTimeoutAsync(3000);
-                                        var slider = iframe.Locator("i.sliderIcon");
-                                        var sliderTarget = iframe.Locator("i.sliderTargetIcon");
-                                        if (await slider.CountAsync() == 1 && await sliderTarget.CountAsync() == 1)
+                                    string itemPrice = await items[j].EvalOnSelectorAsync<string>(
+                                            "span[class*='product-grid-cell_main-price']",
+                                            @"element => {
+                                        return Array.from(element.childNodes)
+                                            .filter(n => n.nodeType === Node.TEXT_NODE)
+                                            .map(n => n.textContent.trim())
+                                            .filter(Boolean)
+                                            .join(' ');
+                                        }"
+                                        );
+
+                                    if (!string.IsNullOrWhiteSpace(itemPrice))
+                                        writer.WriteLine(itemPrice);
+                                }
+                                catch (Exception itemEx)
+                                {
+                                    Console.WriteLine($"Failed to scrape an item: {itemEx.Message}");
+
+                                    // Bypass bot puzzle if it appears
+                                    if (await TryBypassCaptcha(page))
+                                    {
+                                        await Task.Delay(Random.Shared.Next(3000, 5000));
+                                        var closeButton = await page.QuerySelectorAsync("button[id='close-button']");
+                                        if (closeButton != null)
                                         {
-                                            await slider.HoverAsync();
-                                            await page.Mouse.DownAsync();
-                                            await sliderTarget.HoverAsync();
-                                            await page.Mouse.UpAsync();
-                                            await page.WaitForTimeoutAsync(3000);
+                                            await Task.Delay(Random.Shared.Next(500, 1200));
+                                            await closeButton.ClickAsync();
+                                            await Task.Delay(Random.Shared.Next(1200, 2500));
                                         }
-
-                                        // Redo last item
+                                        await HumanScroll(page);
+                                        itemButtons = await page.QuerySelectorAllAsync("li[class^='item-tile']");
+                                        await itemButtons[i].ClickAsync();
+                                        items = await page.QuerySelectorAllAsync("li[class*='product-tile-list-cell']");
                                         j--;
                                     }
                                 }
                             }
-
-                            var closeModalButton = await page.QuerySelectorAsync("button[id='close-button']");
-                            if (closeModalButton != null)
-                            {
-                                await closeModalButton.ClickAsync();
-                                await page.WaitForTimeoutAsync(2000);
-                            }
                         }
-                        catch (Exception itemEx)
+
+                        var closeModalButton = await page.QuerySelectorAsync("button[id='close-button']");
+                        if (closeModalButton != null)
                         {
-                            Console.WriteLine($"Failed to scrape an item button: {itemEx.Message}");
+                            await Task.Delay(Random.Shared.Next(500, 1200));
+                            await closeModalButton.ClickAsync();
+                            await Task.Delay(Random.Shared.Next(1200, 2500));
+                        }
+                    }
+                    catch (Exception itemEx)
+                    {
+                        Console.WriteLine($"Failed to scrape an item button: {itemEx.Message}");
 
-                            // Bypass bot puzzle if it appears
-                            var iframe = page.FrameLocator("iframe[src*='https://geo.captcha-delivery.com/captcha']");
-                            var retryButton = iframe.Locator("button[class='retryLink']");
-                            await retryButton.ClickAsync();
-                            await page.WaitForTimeoutAsync(3000);
-                            var slider = iframe.Locator("i.sliderIcon");
-                            var sliderTarget = iframe.Locator("i.sliderTargetIcon");
-                            if (await slider.CountAsync() == 1 && await sliderTarget.CountAsync() == 1)
-                            {
-                                await slider.HoverAsync();
-                                await page.Mouse.DownAsync();
-                                await sliderTarget.HoverAsync();
-                                await page.Mouse.UpAsync();
-                                await page.WaitForTimeoutAsync(3000);
-                            }
-
-                            // Redo last item button
+                        // Bypass bot puzzle if it appears
+                        if (await TryBypassCaptcha(page))
+                        {
+                            await Task.Delay(Random.Shared.Next(3000, 5000));
+                            await HumanScroll(page);
+                            itemButtons = await page.QuerySelectorAllAsync("li[class^='item-tile']");
                             i--;
                         }
                     }
                 }
-                else
-                {
-                    Console.WriteLine("No items found on the page.");
-                }
-
-                Console.WriteLine("Scraping complete.");
             }
             catch (Exception ex)
             {
@@ -414,53 +481,37 @@ namespace Retail_Crawler.Controllers
 
         public async Task CrawlShoprite(IBrowserContext context, string zipcode)
         {
-            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\Shoprite";
+            string folderPath = Directory.GetCurrentDirectory() + @"\bin\Debug\net8.0\Shoprite";
             if (!Directory.Exists(folderPath))
             {
                 Directory.CreateDirectory(folderPath);
             }
 
-            var pageNumbers = new ConcurrentQueue<int>(Enumerable.Range(1, 13));
+            int maxPage = await FindShopriteMaxPages(context, zipcode);
+            var pageNumbers = new ConcurrentQueue<int>(Enumerable.Range(1, maxPage));
 
-            var workers = Enumerable.Range(0, 3).Select(async _ =>
+            var workers = Enumerable.Range(0, 3).Select(async workerIndex =>
             {
+                await Task.Delay(Random.Shared.Next(workerIndex * 1500, workerIndex * 3000));
+
                 while (pageNumbers.TryDequeue(out var pageNumber))
                 {
                     var page = await context.NewPageAsync();
 
                     try
                     {
+                        await Task.Delay(Random.Shared.Next(800, 2000));
                         await page.GotoAsync("https://www.shoprite.com/sm/pickup/rsid/3000/circulars");
-                        await page.WaitForTimeoutAsync(5000);
-
-                        var digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
-                        var searchBox = digitalCatalogue.Locator("input[id='searchBox']");
-                        await searchBox.PressSequentiallyAsync(zipcode);
-
-                        var submitButton = digitalCatalogue.Locator("button[class*='geo_button']");
-                        if (await submitButton.CountAsync() > 0)
-                        {
-                            await submitButton.ClickAsync();
-                        }
-
                         await page.WaitForTimeoutAsync(3000);
+                        await Task.Delay(Random.Shared.Next(2500, 4500));
 
-                        var store = digitalCatalogue.Locator("div[class='geoRows']").First;
-                        if (await store.CountAsync() > 0)
-                        {
-                            var storeButton = store.Locator("button[class='geoBtn']");
-                            if (await storeButton.IsVisibleAsync())
-                            {
-                                await storeButton.ClickAsync();
-                                await page.WaitForTimeoutAsync(3000);
+                        await SelectShopriteStore(page, zipcode);
 
-                                string fileName = $"{zipcode}_shoprite_page{pageNumber}.txt";
-                                string filePath = Path.Combine(folderPath, fileName);
-
-                                await System.IO.File.WriteAllTextAsync(filePath, string.Empty);
-                                await ScrapeShopriteWeeklyAd(filePath, page, pageNumber);
-                            }
-                        }
+                        string fileName = $"{zipcode}_shoprite_page{pageNumber}.txt";
+                        string filePath = Path.Combine(folderPath, fileName);
+                        await System.IO.File.WriteAllTextAsync(filePath, string.Empty);
+                        await ScrapeShopriteWeeklyAd(filePath, page, pageNumber);
+                        Console.WriteLine($"Finished scraping Shoprite page {pageNumber} for zipcode {zipcode}");
                     }
                     finally
                     {
@@ -472,138 +523,233 @@ namespace Retail_Crawler.Controllers
             await Task.WhenAll(workers);
         }
 
+        private async Task<int> FindShopriteMaxPages(IBrowserContext context, string zipcode)
+        {
+            var page = await context.NewPageAsync();
+
+            try
+            {
+                await Task.Delay(Random.Shared.Next(500, 1500));
+                await page.GotoAsync("https://www.shoprite.com/sm/pickup/rsid/3000/circulars");
+                await Task.Delay(Random.Shared.Next(2500, 4000));
+
+                bool selected = await SelectShopriteStore(page, zipcode);
+                if (!selected)
+                    return 1;
+
+                var digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
+                var weeklyAd = digitalCatalogue.Locator("a[id='slide1']");
+                await Task.Delay(Random.Shared.Next(600, 1200));
+
+                try
+                {
+                    await weeklyAd.ClickAsync();
+                    await Task.Delay(Random.Shared.Next(4000, 6000));
+                }
+                catch (TimeoutException)
+                {
+                    Console.WriteLine("Weekly ad button not found or not visible.");
+                }
+
+                var maxPagesSpan = digitalCatalogue.Locator("span.vmg-toolbar-nav__max-pages");
+                if (maxPagesSpan != null)
+                {
+                    string? maxPages = await maxPagesSpan.TextContentAsync();
+                    maxPages = maxPages?.Split(' ')[2];
+                    if (!string.IsNullOrEmpty(maxPages) && int.TryParse(maxPages, out int result))
+                        return result;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error occurred while finding max pages: {ex.Message}");
+            }
+            finally
+            {
+                await page.CloseAsync();
+            }
+
+            return 1;
+        }
+
+        private async Task<bool> SelectShopriteStore(IPage page, string zipcode)
+        {
+            var digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
+            var searchBox = digitalCatalogue.Locator("input[id='searchBox']");
+
+            // Type zipcode character by character
+            await searchBox.ClickAsync();
+            await Task.Delay(Random.Shared.Next(200, 500));
+            foreach (char ch in zipcode)
+            {
+                await page.Keyboard.TypeAsync(ch.ToString());
+                await Task.Delay(Random.Shared.Next(80, 180));
+            }
+
+            await Task.Delay(Random.Shared.Next(300, 700));
+
+            var submitButton = digitalCatalogue.Locator("button[class*='geo_button']");
+            if (await submitButton.CountAsync() > 0)
+            {
+                await submitButton.ClickAsync();
+                await Task.Delay(Random.Shared.Next(2500, 4000));
+            }
+
+            var store = digitalCatalogue.Locator("div[class='geoRows']").Nth(2);
+            if (await store.CountAsync() == 0)
+                return false;
+
+            var storeButton = store.Locator("button[class='geoBtn']");
+            if (!await storeButton.IsVisibleAsync())
+                return false;
+
+            await Task.Delay(Random.Shared.Next(400, 900));
+            await storeButton.ClickAsync();
+            await Task.Delay(Random.Shared.Next(2500, 4000));
+            return true;
+        }
+
         public async Task ScrapeShopriteWeeklyAd(string filePath, IPage page, int pageNumber)
         {
             try
             {
                 var digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
                 var weeklyAd = digitalCatalogue.Locator("a[id='slide1']");
-                await weeklyAd.ClickAsync();
-                await page.WaitForTimeoutAsync(5000);
+                await Task.Delay(Random.Shared.Next(600, 1200));
 
-                // Go To Page pageNumber
+                try
+                {
+                    await weeklyAd.ClickAsync();
+                    await Task.Delay(Random.Shared.Next(4000, 6000));
+                }
+                catch (TimeoutException)
+                {
+                    Console.WriteLine("Weekly ad button not found or not visible.");
+                }
+
+                // Navigate to target page
                 var inputNumber = digitalCatalogue.Locator("input[id='inputNumber']");
-                await inputNumber.FillAsync(pageNumber.ToString());
-                await inputNumber.PressAsync("Enter");
-                await page.WaitForTimeoutAsync(3000);
+                await inputNumber.ClickAsync();
+                await Task.Delay(Random.Shared.Next(200, 400));
 
-                // Revert back to 1
-                //int pageCount = 1;
+                // Clear and type page number humanly
+                await inputNumber.SelectTextAsync();
+                await Task.Delay(Random.Shared.Next(100, 250));
+                foreach (char ch in pageNumber.ToString())
+                {
+                    await page.Keyboard.TypeAsync(ch.ToString());
+                    await Task.Delay(Random.Shared.Next(80, 160));
+                }
+                await Task.Delay(Random.Shared.Next(200, 500));
+                await inputNumber.PressAsync("Enter");
+                await Task.Delay(Random.Shared.Next(2500, 4000));
 
                 using var writer = new StreamWriter(filePath, append: true);
 
-                while (true)
+                Console.WriteLine($"Processing page {pageNumber}");
+
+                digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
+
+                // Scroll gently into view
+                await page.EvaluateAsync("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })");
+                await Task.Delay(Random.Shared.Next(800, 1500));
+
+                var itemButtons = digitalCatalogue.Locator($"div.pagenumber-{pageNumber}.productType-product[role='button']");
+
+                bool itemsFound = false;
+                try
                 {
-                    Console.WriteLine($"Processing page {pageNumber}");
+                    await itemButtons.First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 5000 });
+                    itemsFound = true;
+                }
+                catch (TimeoutException)
+                {
+                    Console.WriteLine($"No products found on page {pageNumber}. Skipping.");
+                }
 
-                    digitalCatalogue = page.FrameLocator("iframe[id='digital-catalogue-iframe']");
+                if (!itemsFound)
+                    return;
 
-                    await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
+                int itemCount = await itemButtons.CountAsync();
+                Console.WriteLine($"Found {itemCount} item(s) on page {pageNumber}");
 
-                    var itemButtons = digitalCatalogue.Locator($"div.pagenumber-{pageNumber}.productType-product");
-
-                    bool itemsFound = false;
+                for (int i = 0; i < itemCount; i++)
+                {
+                    Console.WriteLine($"Processing item {i + 1} on page {pageNumber}");
 
                     try
                     {
-                        await itemButtons.First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 5000 });
-                        itemsFound = true;
-                    }
-                    catch (TimeoutException)
-                    {
-                        Console.WriteLine($"No products found on page {pageNumber}. Skipping.");
-                    }
+                        //await HumanMouseClickLocator(page, itemButtons.Nth(i));
+                        await itemButtons.Nth(i).ClickAsync();
+                        await Task.Delay(Random.Shared.Next(1500, 3000));
 
-                    if (itemsFound)
-                    {
-                        int itemButtonsCount = await itemButtons.CountAsync();
-                        Console.WriteLine($"Found {itemButtonsCount} item(s) on page {pageNumber}");
-
-                        // Revert
-                        for (int i = 0; i < itemButtonsCount; i++)
+                        var productCardWrappers = await page.QuerySelectorAllAsync("article[data-testid*='ProductCardWrapper-']");
+                        if (productCardWrappers != null)
                         {
-                            Console.WriteLine($"Processing item {i + 1} on page {pageNumber}");
-
-                            try
+                            foreach (var wrapper in productCardWrappers)
                             {
-                                await itemButtons.Nth(i).ClickAsync();
-                                await page.WaitForTimeoutAsync(2000);
-
-                                // PDP Info
-                                var productCardWrappers = await page.QuerySelectorAllAsync("article[data-testid*='ProductCardWrapper-']");
-                                if (productCardWrappers != null)
+                                // Product name
+                                var productName = await wrapper.QuerySelectorAsync("h3[data-testid*='ProductNameTestId']");
+                                if (productName != null)
                                 {
-                                    foreach (var productCardWrapper in productCardWrappers)
-                                    {
-                                        var productName = await productCardWrapper.QuerySelectorAsync("h3[data-testid*='ProductNameTestId']");
-                                        if (productName != null)
-                                        {
-                                            string text = await productName.EvalOnSelectorAsync<string>(
-                                                ":scope",
-                                                @"element => {
-                                                return Array.from(element.childNodes)
-                                                    .filter(n => n.nodeType === Node.TEXT_NODE)
-                                                    .map(n => n.textContent.trim())
-                                                    .filter(Boolean)
-                                                    .join(' ');
-                                            }"
-                                            );
-
-                                            if (!string.IsNullOrWhiteSpace(text))
-                                            {
-                                                writer.WriteLine(text);
-                                            }
-                                        }
-
-                                        var productPrice = await productCardWrapper.QuerySelectorAsync("div[class*='PromotionLabelBadge--']");
-                                        if (productPrice != null)
-                                        {
-                                            string text = await productPrice.InnerTextAsync();
-                                            if (!text.Contains('$', StringComparison.OrdinalIgnoreCase))
-                                            {
-                                                productPrice = await productCardWrapper.QuerySelectorAsync("div[class^='ProductPrice--']");
-                                                if (productPrice != null)
-                                                {
-                                                    writer.WriteLine(await productPrice.InnerTextAsync());
-                                                }
-                                            }
-                                            else
-                                            {
-                                                writer.WriteLine(text);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            productPrice = await productCardWrapper.QuerySelectorAsync("div[class^='ProductPrice--']");
-                                            if (productPrice != null)
-                                            {
-                                                writer.WriteLine(await productPrice.InnerTextAsync());
-                                            }
-                                        }
-                                    }
+                                    string text = await productName.EvalOnSelectorAsync<string>(
+                                        ":scope",
+                                        @"element => Array.from(element.childNodes)
+                                    .filter(n => n.nodeType === Node.TEXT_NODE)
+                                    .map(n => n.textContent.trim())
+                                    .filter(Boolean)
+                                    .join(' ')"
+                                    );
+                                    if (!string.IsNullOrWhiteSpace(text))
+                                        writer.WriteLine(text);
                                 }
 
-                                // Close modal
-                                var modal = await page.QuerySelectorAsync("div[class='modal']");
-                                if (modal != null)
+                                // Product price — try promo badge first, fall back to regular price
+                                var productPrice = await wrapper.QuerySelectorAsync("div[class*='PromotionLabelBadge--']");
+                                if (productPrice != null)
                                 {
-                                    var closeModalButton = await modal.QuerySelectorAsync("button[data-testid='modal_closeModal-button-testId']");
-                                    if (closeModalButton != null)
+                                    string text = await productPrice.InnerTextAsync();
+                                    if (!text.Contains('$'))
                                     {
-                                        await closeModalButton.ClickAsync();
-                                        await page.WaitForTimeoutAsync(2000);
+                                        var fallback = await wrapper.QuerySelectorAsync("div[class^='ProductPrice--']");
+                                        if (fallback != null)
+                                            writer.WriteLine(await fallback.InnerTextAsync());
+                                    }
+                                    else
+                                    {
+                                        writer.WriteLine(text);
                                     }
                                 }
+                                else
+                                {
+                                    var fallback = await wrapper.QuerySelectorAsync("div[class^='ProductPrice--']");
+                                    if (fallback != null)
+                                        writer.WriteLine(await fallback.InnerTextAsync());
+                                }
+
+                                await Task.Delay(Random.Shared.Next(60, 180));
                             }
-                            catch (Exception itemEx)
+                        }
+
+                        // Close modal
+                        var modal = await page.QuerySelectorAsync("div[class='modal']");
+                        if (modal != null)
+                        {
+                            var closeButton = await modal.QuerySelectorAsync("button[data-testid='modal_closeModal-button-testId']");
+                            if (closeButton != null)
                             {
-                                Console.WriteLine($"Error processing page {pageNumber} item {i + 1}: {itemEx.Message}");
-                                continue;
+                                await Task.Delay(Random.Shared.Next(400, 900));
+                                //await HumanMouseClick(page, closeButton);
+                                await closeButton.ClickAsync();
+                                await Task.Delay(Random.Shared.Next(1200, 2500));
                             }
                         }
                     }
-
-                    break;
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing page {pageNumber} item {i + 1}: {ex.Message}");
+                        continue;
+                    }
                 }
             }
             catch (Exception ex)
@@ -614,8 +760,10 @@ namespace Retail_Crawler.Controllers
 
         public void CombineStopandShopFiles(string zipcode)
         {
-            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\StopandShop";
-            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_stopandshop.txt");
+            string folderPath = Directory.GetCurrentDirectory() + @"\bin\Debug\net8.0\StopandShop";
+            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_StopandShop.txt");
+            System.IO.File.WriteAllText(outputFilePath, string.Empty);
+
             using (StreamWriter writer = new StreamWriter(outputFilePath))
             {
                 for (int i = 1; i <= 2; i++)
@@ -636,11 +784,14 @@ namespace Retail_Crawler.Controllers
 
         public void CombineShopriteFiles(string zipcode)
         {
-            string folderPath = @"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\Shoprite";
-            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_shoprite.txt");
-            using (StreamWriter writer = new StreamWriter(outputFilePath))
+            string folderPath = Directory.GetCurrentDirectory() + @"\bin\Debug\net8.0\Shoprite";
+            int numFiles = Directory.GetFiles(folderPath, "*page*").Length;
+            string outputFilePath = Path.Combine(folderPath, $"{zipcode}_Shoprite.txt");
+            System.IO.File.WriteAllText(outputFilePath, string.Empty);
+
+            using (StreamWriter writer = new(outputFilePath, append: true))
             {
-                for (int i = 1; i <= 13; i++)
+                for (int i = 1; i <= numFiles; i++)
                 {
                     string filePath = Path.Combine(folderPath, $"{zipcode}_shoprite_page{i}.txt");
                     using (StreamReader reader = new StreamReader(filePath))
@@ -658,64 +809,28 @@ namespace Retail_Crawler.Controllers
 
         public async Task CompareStores(string zipcode, string competitor)
         {
-            var folderPath = $@"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\{competitor}";
-
-            string fileName1 = zipcode + ".txt";
-            string fileName2 = zipcode + "_" + competitor + ".txt";
-            string filePath = Path.Combine(folderPath, fileName2);
-
-            var items1 = new List<string>();
-            var prices1 = new List<string>();
+            var folderPath = Directory.GetCurrentDirectory() +  $@"\bin\Debug\net8.0\{competitor}";
+            string fileName = $"{zipcode}_{competitor}.txt";
+            string filePath = Path.Combine(folderPath, fileName);
 
             var items2 = new List<string>();
             var prices2 = new List<string>();
 
-            string[] lines1 = System.IO.File.ReadAllLines(fileName1);
-            string[] lines2 = System.IO.File.ReadAllLines(fileName2);
+            string[] lines2 = System.IO.File.ReadAllLines(filePath);
 
-            // Parse Food Bazaar (2 lines per item)
-            for (int j = 0; j < lines1.Length; j += 2)
-            {
-                if (j + 1 >= lines1.Length) break;
-
-                string line1 = lines1[j].Trim();
-                string line2 = lines1[j + 1].Trim();
-
-                try
-                {
-                    if (line1.StartsWith('$') || (char.IsNumber(line1[0]) && line1[2] == '/'))
-                    {
-                        j--;
-                        continue;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error parsing line {j}: {ex.Message}");
-                    continue;
-                }
-
-                string[] parts = line1.Split(',');
-                string item = parts[0].Trim();
-                string size = parts.Length > 1 ? parts[1].Trim() : "";
-
-                items1.Add(item);
-                prices1.Add(line2);
-            }
-
-            if (fileName2.Contains("shoprite", StringComparison.OrdinalIgnoreCase))
+            if (fileName.Contains("Shoprite", StringComparison.OrdinalIgnoreCase))
             {
                 // Parse ShopRite (2 lines per item)
-                for (int j = 0; j < lines2.Length; j += 2)
+                for (int i = 0; i < lines2.Length; i += 2)
                 {
-                    if (j + 1 >= lines2.Length) break;
+                    if (i + 1 >= lines2.Length) break;
 
-                    string line1 = lines2[j].Trim().Replace(" fl ", " ");
-                    string line2 = lines2[j + 1].Trim();
+                    string line1 = lines2[i].Trim().Replace(" fl ", " ");
+                    string line2 = lines2[i + 1].Trim();
 
                     if (line1.StartsWith('$') || (char.IsNumber(line1[0]) && line1.Contains('$')))
                     {
-                        j--;
+                        i--;
                         continue;
                     }
 
@@ -723,15 +838,15 @@ namespace Retail_Crawler.Controllers
                     prices2.Add(line2);
                 }
             }
-            else if (fileName2.Contains("stopandshop", StringComparison.OrdinalIgnoreCase))
+            else if (fileName.Contains("StopandShop", StringComparison.OrdinalIgnoreCase))
             {
                 // Parse Stop and Shop (3 lines per item)
-                for (int j = 0; j < lines2.Length; j += 3)
+                for (int i = 0; i < lines2.Length; i += 3)
                 {
-                    if (j + 2 >= lines2.Length) break;
-
-                    string line1 = lines2[j].Replace("ct", "count").Trim();
-                    string line2 = lines2[j + 1].Split("|")[0];
+                    if (i + 2 >= lines2.Length) break;
+                    
+                    string line1 = lines2[i].Replace("ct", "count").Trim();
+                    string line2 = lines2[i + 1].Split("|")[0];
                     string oz = "oz";
 
                     int index = line2.IndexOf(oz);
@@ -739,14 +854,14 @@ namespace Retail_Crawler.Controllers
                     {
                         line2 = line2.Substring(0, index + oz.Length).Trim();
                     }
-                    string line3 = lines2[j + 2].Trim();
+                    string line3 = lines2[i + 2].Trim();
 
                     if (line1.StartsWith('$') || line2.StartsWith('$') || !line3.StartsWith('$'))
                     {
                         if (line1.StartsWith('$'))
-                            j -= 2;
+                            i -= 2;
                         else if (line2.StartsWith('$'))
-                            j -= 1;
+                            i -= 1;
 
                         continue;
                     }
@@ -860,19 +975,163 @@ namespace Retail_Crawler.Controllers
         [HttpGet]
         public IActionResult DownloadFile(string store, string competitor)
         {
-            var zipcode = _stores[store];
-            var folderPath = $@"C:\Users\Philip\source\repos\WebCrawler\WebCrawler\bin\Debug\net8.0\{competitor}";
-            string fileName = $"{zipcode}_{competitor}_comparison.csv";
-            string filePath = Path.Combine(folderPath, fileName);
-            if (System.IO.File.Exists(filePath))
+            if (store != null && competitor != null)
             {
-                var bytes = System.IO.File.ReadAllBytes(filePath);
-                return File(bytes, "text/plain", fileName);
+                var zipcode = _stores[store];
+                var folderPath = Directory.GetCurrentDirectory() + $@"\bin\Debug\net8.0\{competitor}";
+                string fileName = $"{zipcode}_{competitor}_comparison.csv";
+                string filePath = Path.Combine(folderPath, fileName);
+                if (System.IO.File.Exists(filePath))
+                {
+                    var bytes = System.IO.File.ReadAllBytes(filePath);
+                    return File(bytes, "text/plain", fileName);
+                }
+                else
+                {
+                    return NotFound("File not found.");
+                }
             }
             else
             {
                 return NotFound("File not found.");
             }
+        }
+    
+        private async Task HumanMouseClick(IPage page, IElementHandle element)
+        {
+            var box = await element.BoundingBoxAsync();
+            if (box == null)
+            {
+                await element.ClickAsync();
+                return;
+            }
+
+            var x = box.X + box.Width * (0.25 + Random.Shared.NextDouble() * 0.5);
+            var y = box.Y + box.Height * (0.25 + Random.Shared.NextDouble() * 0.5);
+
+            await page.Mouse.MoveAsync((float)x, (float)y,
+                new MouseMoveOptions { Steps = Random.Shared.Next(8, 25) });
+
+            await Task.Delay(Random.Shared.Next(50, 150));
+            await page.Mouse.ClickAsync((float)x, (float)y);
+        }
+
+        private async Task HumanTypeIntoSelector(IPage page, string selector, string text)
+        {
+            await page.ClickAsync(selector);
+            await Task.Delay(Random.Shared.Next(100, 300));
+
+            // Clear existing value
+            await page.Keyboard.PressAsync("Control+A");
+            await Task.Delay(Random.Shared.Next(50, 120));
+            await page.Keyboard.PressAsync("Delete");
+            await Task.Delay(Random.Shared.Next(80, 200));
+
+            foreach (char ch in text)
+            {
+                await page.Keyboard.TypeAsync(ch.ToString());
+                await Task.Delay(Random.Shared.Next(80, 180));
+            }
+        }
+
+        private async Task HumanScroll(IPage page)
+        {
+            int previousHeight = 0;
+
+            while (true)
+            {
+                int currentHeight = await page.EvaluateAsync<int>("document.body.scrollHeight");
+                if (currentHeight == previousHeight)
+                    break;
+
+                previousHeight = currentHeight;
+
+                //await page.EvaluateAsync($"window.scrollTo({{ top: {target}, behavior: 'smooth' }})");
+                await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
+                await Task.Delay(Random.Shared.Next(3000, 5000));
+            }
+        }
+
+        private async Task<bool> TryBypassCaptcha(IPage page)
+        {
+            try
+            {
+                var iframe = page.FrameLocator("iframe[src*='https://geo.captcha-delivery.com/captcha']");
+
+                // Try hitting retry if present
+                //var retryButton = iframe.Locator("button[class='retryLink']");
+                //if (await retryButton.CountAsync() > 0)
+                //{
+                //    await retryButton.ClickAsync();
+                //    await Task.Delay(Random.Shared.Next(1500, 3000));
+                //}
+
+                var slider = iframe.Locator("i.sliderIcon");
+                var sliderTarget = iframe.Locator("i.sliderTargetIcon");
+
+                if (await slider.CountAsync() != 1 || await sliderTarget.CountAsync() != 1)
+                    return false;
+
+                // Get bounding boxes so we can do a proper drag with steps
+                var sliderBox = await slider.BoundingBoxAsync();
+                var targetBox = await sliderTarget.BoundingBoxAsync();
+
+                if (sliderBox == null || targetBox == null)
+                    return false;
+
+                float startX = (float)(sliderBox.X + sliderBox.Width / 2);
+                float startY = (float)(sliderBox.Y + sliderBox.Height / 2);
+                float endX = (float)(targetBox.X + targetBox.Width / 2);
+                float endY = (float)(targetBox.Y + targetBox.Height / 2);
+
+                await page.Mouse.MoveAsync(startX, startY,
+                    new MouseMoveOptions { Steps = Random.Shared.Next(3, 5) });
+                await Task.Delay(Random.Shared.Next(200, 500));
+                await page.Mouse.DownAsync();
+                await Task.Delay(Random.Shared.Next(100, 300));
+
+                // Move in small increments rather than jumping directly to target
+                int dragSteps = Random.Shared.Next(20, 40);
+                for (int s = 1; s <= dragSteps; s++)
+                {
+                    float t = (float)s / dragSteps;
+                    float cx = startX + (endX - startX) * t;
+                    // Slight arc: adds a small sine-wave wobble on Y
+                    float cy = startY + (endY - startY) * t
+                               + (float)(Math.Sin(t * Math.PI) * Random.Shared.Next(2, 6));
+
+                    await page.Mouse.MoveAsync(cx, cy);
+                    await Task.Delay(Random.Shared.Next(10, 35));
+                }
+
+                await Task.Delay(Random.Shared.Next(100, 300));
+                await page.Mouse.UpAsync();
+                await Task.Delay(Random.Shared.Next(3000, 5000));
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task HumanMouseClickLocator(IPage page, ILocator locator)
+        {
+            var box = await locator.BoundingBoxAsync();
+            if (box == null)
+            {
+                await locator.ClickAsync();
+                return;
+            }
+
+            var x = box.X + box.Width * (0.25 + Random.Shared.NextDouble() * 0.5);
+            var y = box.Y + box.Height * (0.25 + Random.Shared.NextDouble() * 0.5);
+
+            await page.Mouse.MoveAsync((float)x, (float)y,
+                new MouseMoveOptions { Steps = Random.Shared.Next(8, 25) });
+            await Task.Delay(Random.Shared.Next(50, 150));
+            await page.Mouse.ClickAsync((float)x, (float)y);
         }
     }
 }

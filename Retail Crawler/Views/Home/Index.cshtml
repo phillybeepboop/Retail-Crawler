@@ -23,19 +23,26 @@
 }
 
 <div>
+    <form asp-action="CrawlAndCompare">
+        <button type="submit" class="btn btn-primary">Get Files</button>
+    </form>
+    <br />
+</div>
+
+<div>
     <form asp-action="DownloadFile" method="get">
         <div class="mb-3">
             <label for="store" class="form-label">Zip Code:</label>
-            <select name="store" class="form-control" id="store">
+            <select name="store" class="form-control" id="store" required>
                 @Html.Raw(RenderStoreListDropdown())
             </select>
         </div>
         <div class="mb-3">
             <label for="competitorInput" class="form-label">Competitor:</label>
-            <select name="competitor" class="form-control" id="competitor">
+            <select name="competitor" class="form-control" id="competitor" required>
                 <option value=""></option>
-                <option value="stopandshop">StopandShop</option>
-                <option value="shoprite">Shoprite</option>
+                <option value="StopandShop">StopandShop</option>
+                <option value="Shoprite">Shoprite</option>
             </select>
         </div>
         <button type="submit" class="btn btn-primary">Download</button>
